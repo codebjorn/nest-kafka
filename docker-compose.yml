@@ -1,0 +1,85 @@
+version: '3'
+
+services:
+  app:
+    image: node:current-alpine
+    user: 1000:1000
+    container_name: kft-app
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: >
+      sh -c "[ -d "./node_modules" ] && yarn start:dev || yarn && yarn start:dev"
+    ports:
+      - 3001:3001
+    networks:
+      - kft-app
+
+  mongo:
+    image: mongo
+    container_name: kft-mongo
+    restart: unless-stopped
+    ports:
+      - 27017:27017
+    env_file:
+      - .env
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${DB_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${DB_PASSWORD}
+      MONGO_INITDB_DATABASE: ${DB_NAME}
+    networks:
+      - kft-app
+    volumes:
+      - mongo:/data/db
+
+  zookeeper:
+    platform: linux/x86_64
+    image: confluentinc/cp-zookeeper:latest
+    container_name: kft-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - kft-app
+    ports:
+      - 22181:2181
+
+  kafka:
+    platform: linux/x86_64
+    image: confluentinc/cp-kafka:latest
+    container_name: kft-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - 29092:29092
+    networks:
+      - kft-app
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  kafka_ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kft-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - 8080:8080
+    networks:
+      - kft-app
+    environment:
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+      KAFKA_CLUSTERS_0_NAME: Local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+
+networks:
+  kft-app:
+    driver: bridge
+
+volumes:
+  mongo:
